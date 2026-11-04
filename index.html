@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#163b35">
+<title>BIBEGI · Centrado óptico</title>
+<style>
+:root{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#172522;background:#f4f7f5}
+*{box-sizing:border-box}body{margin:0;padding:18px;max-width:760px;margin-inline:auto}
+header{background:#163b35;color:white;border-radius:16px;padding:18px;margin-bottom:16px}
+h1{font-size:1.45rem;margin:0 0 5px}header p{margin:0;opacity:.85;font-size:.9rem}
+section{background:white;border:1px solid #dce5e0;border-radius:14px;padding:15px;margin:12px 0}
+h2{font-size:1.05rem;margin:0 0 12px}
+label{display:block;font-size:.9rem;margin:10px 0 5px}
+input{width:100%;padding:11px;border:1px solid #bdcbc4;border-radius:9px;font:inherit}
+button{border:1px solid #bdcbc4;border-radius:10px;padding:11px 14px;font:inherit;font-weight:650;background:white;color:#163b35;margin:5px 5px 5px 0}
+button.primary{background:#176b57;color:white;border-color:#176b57}
+video,canvas{width:100%;max-height:430px;object-fit:contain;background:#202725;border-radius:10px;display:block}
+.small{font-size:.82rem;color:#53635c;line-height:1.45}
+#status{padding:10px;border-radius:9px;background:#edf3ef;font-size:.88rem}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.metric{background:#edf3ef;border-radius:10px;padding:10px}.metric span{display:block;font-size:.78rem;color:#53635c}.metric strong{font-size:1.15rem}
+@media(max-width:420px){body{padding:10px}.grid{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<header><h1>BIBEGI · Centrado óptico</h1><p>Prototipo experimental para pruebas con montura sin lentes</p></header>
+
+<section>
+<h2>1. Referencia del autorrefractómetro</h2>
+<label for="dip">DIP binocular (mm)</label><input id="dip" type="number" step="0.1" placeholder="Ej. 63">
+<label for="cardmm">Anchura real de la tarjeta (mm)</label><input id="cardmm" type="number" step="0.1" value="85.6">
+<p class="small">La DIP se utilizará para comparar el resultado. La escala de la fotografía se obtiene con una tarjeta bancaria estándar (85,6 mm), colocada aproximadamente en el mismo plano que la montura.</p>
+</section>
+
+<section>
+<h2>2. Cámara y fotografía</h2>
+<video id="video" autoplay playsinline muted></video>
+<div><button class="primary" id="start">Iniciar cámara</button><button id="capture">Capturar</button><button id="retake">Repetir</button></div>
+<p id="status">Pulsa «Iniciar cámara» y acepta el permiso. Si es posible, usa la cámara trasera con ayuda de otra persona o un soporte, a la altura de los ojos.</p>
+</section>
+
+<section>
+<h2>3. Marcar puntos</h2>
+<p class="small">En la foto, marca en orden: los dos extremos de la tarjeta; centro pupilar OD y OI; punto inferior de aro OD y OI. La imagen se muestra espejada para facilitar la orientación. Mantén la tarjeta y la montura lo más cerca posible del mismo plano.</p>
+<canvas id="canvas" width="640" height="480"></canvas>
+<p id="instruction" class="small">Primero captura una fotografía.</p>
+<div><button id="undo">Deshacer</button><button id="clear">Borrar puntos</button><button class="primary" id="calc">Calcular</button></div>
+<p id="count" class="small">0 de 6 puntos</p>
+</section>
+
+<section>
+<h2>4. Resultados</h2>
+<div id="results" class="small">Todavía no hay resultados.</div>
+<button id="csv">Descargar CSV</button>
+</section>
+<section class="small">
+<strong>Limitaciones:</strong> Esta herramienta es un prototipo de investigación y no un instrumento de centrado validado. Las medidas dependen de la calidad de la fotografía, la perspectiva, la posición de la tarjeta y la selección manual de puntos. No utilizar para fabricar lentes sin verificar las medidas con un sistema de centrado adecuado. Las alturas se calculan desde el punto inferior de aro que marques y no sustituyen los criterios de adaptación de cada lente.
+</section>
+
+<script>
+(()=>{
+const $=id=>document.getElementById(id),v=$('video'),c=$('canvas'),ctx=c.getContext('2d');
+let stream=null,photo=null,pts=[],data=null;
+const labels=['Extremo izquierdo de la tarjeta','Extremo derecho de la tarjeta','Centro pupilar OD','Centro pupilar OI','Punto inferior del aro OD','Punto inferior del aro OI'];
+function draw(){if(!photo)return;ctx.clearRect(0,0,c.width,c.height);ctx.drawImage(photo,0,0,c.width,c.height);pts.forEach((p,i)=>{ctx.beginPath();ctx.arc(p.x,p.y,7,0,Math.PI*2);ctx.fillStyle=i<2?'#ffd34d':i<4?'#39d8ff':'#ff7194';ctx.fill();ctx.lineWidth=2;ctx.strokeStyle='#111';ctx.stroke();ctx.font='bold 16px sans-serif';ctx.fillStyle='#fff';ctx.fillText(String(i+1),p.x+9,p.y-9)});}
+function update(){ $('count').textContent=pts.length+' de 6 puntos';$('instruction').textContent=pts.length<6?'Marca: '+labels[pts.length]:'Se han marcado los seis puntos. Pulsa Calcular.';draw();}
+$('start').onclick=async()=>{try{if(!navigator.mediaDevices?.getUserMedia)throw Error('El navegador no ofrece acceso a cámara. Abre esta página desde una dirección HTTPS en Chrome.');if(stream)stream.getTracks().forEach(t=>t.stop());stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});v.srcObject=stream;await v.play();$('status').textContent='Cámara activa. Encuadra al paciente y pulsa Capturar.';}catch(e){$('status').textContent='No se pudo iniciar la cámara: '+e.message+' Comprueba que la página esté publicada con HTTPS y que Chrome tenga permiso para usar la cámara.';}};
+$('capture').onclick=()=>{if(!v.videoWidth){$('status').textContent='Primero inicia la cámara.';return;}let w=640,h=Math.round(640*v.videoHeight/v.videoWidth);c.width=w;c.height=h;photo=document.createElement('canvas');photo.width=w;photo.height=h;let x=photo.getContext('2d');x.translate(w,0);x.scale(-1,1);x.drawImage(v,0,0,w,h);pts=[];data=null;update();$('status').textContent='Fotografía capturada. Marca los seis puntos en orden.';};
+$('retake').onclick=()=>{photo=null;pts=[];data=null;ctx.clearRect(0,0,c.width,c.height);update();$('status').textContent='Vuelve a encuadrar y capturar.';};
+c.addEventListener('click',e=>{if(!photo||pts.length>=6)return;let r=c.getBoundingClientRect();pts.push({x:(e.clientX-r.left)*c.width/r.width,y:(e.clientY-r.top)*c.height/r.height});update();});
+$('undo').onclick=()=>{pts.pop();data=null;update();};
+$('clear').onclick=()=>{pts=[];data=null;update();$('results').textContent='Puntos borrados.';};
+$('calc').onclick=()=>{if(pts.length!==6){$('results').textContent='Marca los seis puntos antes de calcular.';return;}let mm=Number($('cardmm').value),dip=Number($('dip').value);let px=Math.hypot(pts[1].x-pts[0].x,pts[1].y-pts[0].y);if(!(mm>0&&px>0)){$('results').textContent='Comprueba la anchura de la tarjeta y sus dos extremos.';return;}let scale=px/mm,photoDip=Math.hypot(pts[3].x-pts[2].x,pts[3].y-pts[2].y)/scale,ho=(pts[4].y-pts[2].y)/scale,hi=(pts[5].y-pts[3].y)/scale;data={dip_foto_mm:photoDip,dip_autorrefractometro_mm:Number.isFinite(dip)&&dip>0?dip:'',diferencia_mm:Number.isFinite(dip)&&dip>0?photoDip-dip:'',altura_OD_mm:ho,altura_OI_mm:hi,escala_px_mm:scale};$('results').innerHTML='<div class="grid">'+[['DIP foto',photoDip.toFixed(1)+' mm'],['DIP autorefractómetro',data.dip_autorrefractometro_mm===''?'No indicada':dip.toFixed(1)+' mm'],['Diferencia',data.diferencia_mm===''?'—':(data.diferencia_mm>0?'+':'')+data.diferencia_mm.toFixed(1)+' mm'],['Altura OD',ho.toFixed(1)+' mm'],['Altura OI',hi.toFixed(1)+' mm'],['Escala',scale.toFixed(2)+' px/mm']].map(a=>'<div class="metric"><span>'+a[0]+'</span><strong>'+a[1]+'</strong></div>').join('')+'</div><p>Las alturas son diferencias verticales entre los puntos que has marcado. Comprueba que los puntos corresponden a la posición de uso y al criterio de centrado elegido.</p>';};
+$('csv').onclick=()=>{if(!data){$('status').textContent='Calcula primero las medidas.';return;}let rows=['Parametro,Valor',...Object.entries(data).map(([k,val])=>k+','+val)];let blob=new Blob(['\\ufeff'+rows.join('\\n')],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='BIBEGI_centrado_prueba.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1200);};
+update();
+})();
+</script>
+</body></html>
